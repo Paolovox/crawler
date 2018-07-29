@@ -100,7 +100,8 @@ class CrawlerThread(threading.Thread):
                 if self.crawlDepth > 1 and n_threads < 20:
                     set_value(n_threads+1)
                     CrawlerThread(binarySemaphore, result_url, self.crawlDepth-1).start()
-
+                else:
+                    url_ricorsivo(result_url,self.mysql,self.binarySemaphore);
 
 
 def url_ricorsivo(url,mysql,semaforo):
@@ -128,13 +129,15 @@ def url_ricorsivo(url,mysql,semaforo):
         mycursor.execute(sql,(result,))
         myresult = mycursor.fetchall()
 
+        semaforo.release()
+
         if(result_url == url or result_url in urls or result == ""):
-            semaforo.release()
             continue
 
         else:
             if not myresult:
 
+                semaforo.acquire()
 
                 sql = "INSERT INTO domini (url, hit, created_date, updated_date) VALUES (%s, %s, %s, %s)"
                 val = (result, 1, datetime.datetime.now(), datetime.datetime.now())
@@ -144,8 +147,6 @@ def url_ricorsivo(url,mysql,semaforo):
                 semaforo.release()
 
                 url_ricorsivo(result_url,mysql,semaforo)
-            else:
-                semaforo.release()
 
 
 
