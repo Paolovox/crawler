@@ -41,6 +41,7 @@ class CrawlerThread(threading.Thread):
                               database="syrus_detector"
                             )
 
+
         def run(self):
 
             try: socket = urllib.urlopen(self.url)
@@ -70,7 +71,6 @@ class CrawlerThread(threading.Thread):
                 result_url = '{uri.scheme}://{uri.netloc}'.format(uri=up.urlsplit(url))
                 result = '{uri.netloc}'.format(uri=up.urlsplit(url))
 
-
                 self.binarySemaphore.acquire()
 
                 mycursor = self.mysql.cursor()
@@ -81,7 +81,6 @@ class CrawlerThread(threading.Thread):
                 self.binarySemaphore.release()
 
                 if(result_url == self.url or result_url in urls or result == ""):
-                    self.binarySemaphore.release()
                     continue
 
                 else:
@@ -97,11 +96,15 @@ class CrawlerThread(threading.Thread):
                         self.binarySemaphore.release()
 
 
-                if self.crawlDepth > 1 and n_threads < 20:
+                if self.crawlDepth > 1 and n_threads < 10:
                     set_value(n_threads+1)
                     CrawlerThread(binarySemaphore, result_url, self.crawlDepth-1).start()
                 else:
+                    self.binarySemaphore.acquire()
+
                     url_ricorsivo(result_url,self.mysql,self.binarySemaphore);
+
+                    self.binarySemaphore.release()
 
 
 def url_ricorsivo(url,mysql,semaforo):
@@ -122,14 +125,11 @@ def url_ricorsivo(url,mysql,semaforo):
         result_url = '{uri.scheme}://{uri.netloc}'.format(uri=up.urlsplit(url))
         result = '{uri.netloc}'.format(uri=up.urlsplit(url))
 
-        semaforo.acquire()
 
         mycursor = mysql.cursor()
         sql = "SELECT * FROM domini WHERE url = %s"
         mycursor.execute(sql,(result,))
         myresult = mycursor.fetchall()
-
-        semaforo.release()
 
         if(result_url == url or result_url in urls or result == ""):
             continue
@@ -137,14 +137,10 @@ def url_ricorsivo(url,mysql,semaforo):
         else:
             if not myresult:
 
-                semaforo.acquire()
-
                 sql = "INSERT INTO domini (url, hit, created_date, updated_date) VALUES (%s, %s, %s, %s)"
                 val = (result, 1, datetime.datetime.now(), datetime.datetime.now())
                 mycursor.execute(sql, val)
                 mysql.commit()
-
-                semaforo.release()
 
                 url_ricorsivo(result_url,mysql,semaforo)
 
