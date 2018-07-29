@@ -5,6 +5,9 @@ import urlparse as up
 import mysql.connector as db
 import datetime
 
+reload(sys)
+sys.setdefaultencoding('utf8')
+
 class LinkHTMLParser(HTMLParser):
       A_TAG = "a"
       HREF_ATTRIBUTE = "href"
@@ -25,66 +28,141 @@ class LinkHTMLParser(HTMLParser):
 
 
 class CrawlerThread(threading.Thread):
-      def __init__(self, binarySemaphore, url, crawlDepth):
-        self.binarySemaphore = binarySemaphore
-        self.url = url
-        self.crawlDepth = crawlDepth
-        self.threadId = hash(self)
-        threading.Thread.__init__(self)
-        self.mysql = db.connect(
-                          host="localhost",
-                          user="root",
-                          passwd="root",
-                          database="syrus_detector"
-                        )
+        def __init__(self, binarySemaphore, url, crawlDepth):
+            self.binarySemaphore = binarySemaphore
+            self.url = url
+            self.crawlDepth = crawlDepth
+            self.threadId = hash(self)
+            threading.Thread.__init__(self)
+            self.mysql = db.connect(
+                              host="localhost",
+                              user="root",
+                              passwd="root",
+                              database="syrus_detector"
+                            )
 
-      def run(self):
-      	  """Print out all of the links on the given url associated with this particular thread. Grab the passed in
-	  binary semaphore when attempting to write to STDOUT so that there is no overlap between threads' output."""
-	  socket = urllib.urlopen(self.url)
-	  urlMarkUp = socket.read()
-	  linkHTMLParser = LinkHTMLParser()
-	  linkHTMLParser.feed(urlMarkUp)
-      	  self.binarySemaphore.acquire() # wait if another thread has acquired and not yet released binary semaphore
-	  print "Thread #%d: Reading from %s" %(self.threadId, self.url)
-	  print "Thread #%d: Crawl Depth = %d" %(self.threadId, self.crawlDepth)
-      	  print "Thread #%d: Retreived the following links..." %(self.threadId)
-	  urls = []
-	  for link in linkHTMLParser.links:
-	      link = urlparse.urljoin(self.url, link)
-	      urls.append(link)
+        def run(self):
 
-	  self.binarySemaphore.release()
-	  for url in urls:
+            try: socket = urllib.urlopen(self.url)
+            except:
+                return False
 
-            result = '{uri.scheme}://{uri.netloc}'.format(uri=up.urlsplit(url))
+            urlMarkUp = socket.read()
+            linkHTMLParser = LinkHTMLParser()
+            linkHTMLParser.feed(urlMarkUp)
+            self.binarySemaphore.acquire()
 
-            mycursor = self.mysql.cursor()
-            sql = "SELECT * FROM domini WHERE url = %s"
-            mycursor.execute(sql,(result,))
-            myresult = mycursor.fetchall()
+            print "Thread #%d: Reading from %s" %(self.threadId, self.url)
+            print "Thread #%d: Crawl Depth = %d" %(self.threadId, self.crawlDepth)
+            print "Thread #%d: Retreived the following links..." %(self.threadId)
 
-            print(myresult)
+            urls = []
+            for link in linkHTMLParser.links:
+              link = urlparse.urljoin(self.url, link)
+              urls.append(link)
 
-            if(result == self.url or result in urls):
-                continue
+            n_threads = get_value()
+
+            self.binarySemaphore.release()
+
+            for url in urls:
+
+                result_url = '{uri.scheme}://{uri.netloc}'.format(uri=up.urlsplit(url))
+                result = '{uri.netloc}'.format(uri=up.urlsplit(url))
+
+
+                self.binarySemaphore.acquire()
+
+                mycursor = self.mysql.cursor()
+                sql = "SELECT * FROM domini WHERE url = %s"
+                mycursor.execute(sql,(result,))
+                myresult = mycursor.fetchall()
+
+                self.binarySemaphore.release()
+
+                if(result_url == self.url or result_url in urls or result == ""):
+                    self.binarySemaphore.release()
+                    continue
+
+                else:
+                    if not myresult:
+
+                        self.binarySemaphore.acquire()
+
+                        sql = "INSERT INTO domini (url, hit, created_date, updated_date) VALUES (%s, %s, %s, %s)"
+                        val = (result, 1, datetime.datetime.now(), datetime.datetime.now())
+                        mycursor.execute(sql, val)
+                        self.mysql.commit()
+
+                        self.binarySemaphore.release()
+
+
+                if self.crawlDepth > 1 and n_threads < 20:
+                    set_value(n_threads+1)
+                    CrawlerThread(binarySemaphore, result_url, self.crawlDepth-1).start()
+
+
+
+def url_ricorsivo(url,mysql,semaforo):
+    try: socket = urllib.urlopen(url)
+    except:
+        return False
+
+    urlMarkUp = socket.read()
+    linkHTMLParser = LinkHTMLParser()
+    linkHTMLParser.feed(urlMarkUp)
+
+    urls = []
+    for link in linkHTMLParser.links:
+      link = urlparse.urljoin(url, link)
+      urls.append(link)
+
+    for url in urls:
+        result_url = '{uri.scheme}://{uri.netloc}'.format(uri=up.urlsplit(url))
+        result = '{uri.netloc}'.format(uri=up.urlsplit(url))
+
+        semaforo.acquire()
+
+        mycursor = mysql.cursor()
+        sql = "SELECT * FROM domini WHERE url = %s"
+        mycursor.execute(sql,(result,))
+        myresult = mycursor.fetchall()
+
+        if(result_url == url or result_url in urls or result == ""):
+            semaforo.release()
+            continue
+
+        else:
+            if not myresult:
+
+
+                sql = "INSERT INTO domini (url, hit, created_date, updated_date) VALUES (%s, %s, %s, %s)"
+                val = (result, 1, datetime.datetime.now(), datetime.datetime.now())
+                mycursor.execute(sql, val)
+                mysql.commit()
+
+                semaforo.release()
+
+                url_ricorsivo(result_url,mysql,semaforo)
             else:
-                if not myresult:
-                    sql = "INSERT INTO domini (url, hit, created_date, updated_date) VALUES (%s, %s, %s, %s)"
-                    val = (result, 1, datetime.datetime.now(), datetime.datetime.now())
-                    mycursor.execute(sql, val)
-                    self.mysql.commit()
-                    print(result)
-            # Keep crawling to different urls until the crawl depth is less than 1
-            if self.crawlDepth > 1:
-                CrawlerThread(binarySemaphore, result, self.crawlDepth-1).start()
+                semaforo.release()
 
 
+
+
+def get_value():
+    global n_threads
+    return n_threads
+
+def set_value(new_value):
+    global n_threads
+    n_threads = new_value
 
 if __name__ == "__main__":
 
+   n_threads=0
 
    binarySemaphore = threading.Semaphore(1)
-   urls = [("http://www.repubblica.it", 1)]
+   urls = [("http://www.google.it", 6)]
    for (url, crawlDepth) in urls:
        CrawlerThread(binarySemaphore, url, crawlDepth).start()
