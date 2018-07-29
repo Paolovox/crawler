@@ -2,6 +2,8 @@ import threading, urllib, urlparse
 from HTMLParser import HTMLParser
 import sys
 import urlparse as up
+import mysql.connector as db
+import datetime
 
 class LinkHTMLParser(HTMLParser):
       A_TAG = "a"
@@ -24,11 +26,17 @@ class LinkHTMLParser(HTMLParser):
 
 class CrawlerThread(threading.Thread):
       def __init__(self, binarySemaphore, url, crawlDepth):
-      	  self.binarySemaphore = binarySemaphore
-	  self.url = url
-	  self.crawlDepth = crawlDepth
-	  self.threadId = hash(self)
-	  threading.Thread.__init__(self)
+        self.binarySemaphore = binarySemaphore
+        self.url = url
+        self.crawlDepth = crawlDepth
+        self.threadId = hash(self)
+        threading.Thread.__init__(self)
+        self.mysql = db.connect(
+                          host="localhost",
+                          user="root",
+                          passwd="root",
+                          database="syrus_detector"
+                        )
 
       def run(self):
       	  """Print out all of the links on the given url associated with this particular thread. Grab the passed in
@@ -49,15 +57,27 @@ class CrawlerThread(threading.Thread):
 	  self.binarySemaphore.release()
 	  for url in urls:
 
-              result = '{uri.scheme}://{uri.netloc}'.format(uri=up.urlsplit(url))
+            result = '{uri.scheme}://{uri.netloc}'.format(uri=up.urlsplit(url))
 
-              if(result == self.url or result in urls):
-                  continue
-              else:
-                  print(result)
-	          # Keep crawling to different urls until the crawl depth is less than 1
-              if self.crawlDepth > 1:
-	      	 CrawlerThread(binarySemaphore, result, self.crawlDepth-1).start()
+            mycursor = self.mysql.cursor()
+            sql = "SELECT * FROM domini WHERE url = %s"
+            mycursor.execute(sql,(result,))
+            myresult = mycursor.fetchall()
+
+            print(myresult)
+
+            if(result == self.url or result in urls):
+                continue
+            else:
+                if not myresult:
+                    sql = "INSERT INTO domini (url, hit, created_date, updated_date) VALUES (%s, %s, %s, %s)"
+                    val = (result, 1, datetime.datetime.now(), datetime.datetime.now())
+                    mycursor.execute(sql, val)
+                    self.mysql.commit()
+                    print(result)
+            # Keep crawling to different urls until the crawl depth is less than 1
+            if self.crawlDepth > 1:
+                CrawlerThread(binarySemaphore, result, self.crawlDepth-1).start()
 
 
 
