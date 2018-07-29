@@ -1,31 +1,32 @@
-import threading, urllib, urlparse
-from HTMLParser import HTMLParser
+import threading, urllib, urllib.parse
+from html.parser import HTMLParser
 import sys
-import urlparse as up
+import urllib.parse as up
 import mysql.connector as db
 import datetime
-
-reload(sys)
-sys.setdefaultencoding('utf8')
+import urllib.request
+import operator
 
 class LinkHTMLParser(HTMLParser):
-      A_TAG = "a"
-      HREF_ATTRIBUTE = "href"
+    A_TAG = "a"
+    HREF_ATTRIBUTE = "href"
 
-      def __init__(self):
-      	  self.links = []
-	  HTMLParser.__init__(self)
+    def __init__(self):
+        self.links = []
+        HTMLParser.__init__(self)
 
-      def handle_starttag(self, tag, attrs):
-      	  """Add all 'href' links within 'a' tags to self.links"""
-      	  if cmp(tag, self.A_TAG) == 0:
-	     for (key, value) in attrs:
-       	     	 if cmp(key, self.HREF_ATTRIBUTE) == 0:
-		    self.links.append(value)
+    def handle_starttag(self, tag, attrs):
+        """Add all 'href' links within 'a' tags to self.links"""
+        if cmp(tag, self.A_TAG) == 0:
+            for (key, value) in attrs:
+                if cmp(key, self.HREF_ATTRIBUTE) == 0:
+                    self.links.append(value)
 
-      def handle_endtag(self, tag):
-      	  pass
+    def handle_endtag(self, tag):
+        pass
 
+def cmp(a,b):
+    return (a > b) - (a < b)
 
 class CrawlerThread(threading.Thread):
         def __init__(self, binarySemaphore, url, crawlDepth):
@@ -44,25 +45,26 @@ class CrawlerThread(threading.Thread):
 
         def run(self):
 
-            try: socket = urllib.urlopen(self.url)
+            try: socket = urllib.request.urlopen(self.url)
             except:
                 return False
 
             urlMarkUp = socket.read()
             linkHTMLParser = LinkHTMLParser()
-            linkHTMLParser.feed(urlMarkUp)
+            linkHTMLParser.feed(str(urlMarkUp))
             self.binarySemaphore.acquire()
 
-            print "Thread #%d: Reading from %s" %(self.threadId, self.url)
-            print "Thread #%d: Crawl Depth = %d" %(self.threadId, self.crawlDepth)
-            print "Thread #%d: Retreived the following links..." %(self.threadId)
+            print ("Thread #%d: Reading from %s" %(self.threadId, self.url))
+            print ("Thread #%d: Crawl Depth = %d" %(self.threadId, self.crawlDepth))
+            print ("Thread #%d: Retreived the following links..." %(self.threadId))
 
             urls = []
             for link in linkHTMLParser.links:
-              link = urlparse.urljoin(self.url, link)
+              link = up.urljoin(self.url, link)
               urls.append(link)
 
             n_threads = get_value()
+
 
             self.binarySemaphore.release()
 
