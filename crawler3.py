@@ -110,17 +110,17 @@ class CrawlerThread(threading.Thread):
 
 
 def url_ricorsivo(url,mysql,semaforo):
-    try: socket = urllib.urlopen(url)
+    try: socket = urllib.request.urlopen(url)
     except:
         return False
 
     urlMarkUp = socket.read()
     linkHTMLParser = LinkHTMLParser()
-    linkHTMLParser.feed(urlMarkUp)
+    linkHTMLParser.feed(str(urlMarkUp))
 
     urls = []
     for link in linkHTMLParser.links:
-      link = urlparse.urljoin(url, link)
+      link = up.urljoin(url, link)
       urls.append(link)
 
     for url in urls:
@@ -162,6 +162,6 @@ if __name__ == "__main__":
    n_threads=0
 
    binarySemaphore = threading.Semaphore(1)
-   urls = [("http://www.google.it", 6)]
+   urls = [("http://www.libero.it", 10)]
    for (url, crawlDepth) in urls:
        CrawlerThread(binarySemaphore, url, crawlDepth).start()
